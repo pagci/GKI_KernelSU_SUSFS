@@ -28,7 +28,11 @@ runs:
         ANDROID_PART=$(echo "$VERSION" | cut -d- -f1)
         KERNEL_PART=$(echo "$VERSION" | cut -d- -f2)
 
-        if [[ ${{ inputs.version }} == "android15-6.6" || ${{ inputs.version }} == "android16-6.12" ]]; then
+        if [[ "${{ inputs.version }}" == "android14-6.1" ]]; then
+          # PNA stock-identity: emit the EXACT stock panther (CP1A.260405.005) kernel suffix, no -Wild,
+          # so uname -r / /proc/version / /proc/sys/kernel/osrelease all read stock and clear Custom ROM.
+          sed -i '$d' scripts/setlocalversion && echo 'echo "-android14-11-gfa1d6308d1fe-ab14691759"' >> scripts/setlocalversion
+        elif [[ ${{ inputs.version }} == "android15-6.6" || ${{ inputs.version }} == "android16-6.12" ]]; then
           KERNEL_STRING="$KERNEL_PART.${{ inputs.sublevel }}-$ANDROID_PART"
           sed -i '$d' scripts/setlocalversion && echo "echo \"$KERNEL_STRING-Wild\"" >> scripts/setlocalversion
         else
