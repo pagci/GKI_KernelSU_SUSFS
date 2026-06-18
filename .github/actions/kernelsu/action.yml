@@ -15,11 +15,12 @@ runs:
       run: |
         set -euo pipefail
 
-        # Official SukiSU integration. The 'susfs-main' arg selects the SukiSU branch
-        # that carries SUSFS support; this is the SukiSU-side counterpart that the
-        # ShirkNeko/susfs4ksu kernel patches are co-designed against.
-        echo "Adding SukiSU Ultra (susfs-main)..."
-        curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-main
+        # Official SukiSU integration. The 'builtin' arg selects the SukiSU branch
+        # whose kernel/Kconfig exposes the full CONFIG_KSU_SUSFS* menu and has the
+        # manual hooks built in-tree (verified against ShirkNeko's own green builder).
+        # NOTE: 'susfs-main'/'nongki' branches were removed upstream (404); 'builtin' is current.
+        echo "Adding SukiSU Ultra (builtin)..."
+        curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s builtin
 
         # setup.sh creates KernelSU/ at the kernel root and symlinks drivers/kernelsu.
         if [ ! -d KernelSU ]; then
@@ -48,4 +49,4 @@ runs:
       with:
         config_list: |
           CONFIG_KSU=y
-          CONFIG_KPROBES=y
+          CONFIG_KSU_MANUAL_HOOK=y
