@@ -1,70 +1,51 @@
-name: Setup Wild KSU
-description: Download and configure Wild KSU with version tracking
+name: Setup SukiSU Ultra
+description: Download and configure SukiSU Ultra (with in-tree SUSFS support + selinux-hide) via official setup.sh
 inputs:
   use_latest_commits:
-    description: 'Use the latest commit on the branch instead of the pinned commit'
+    description: 'Unused for SukiSU (kept for interface compatibility); SukiSU is pulled from susfs-main tip'
     required: false
     default: true
 
 runs:
   using: composite
   steps:
-    - name: Download Wild KSU
+    - name: Download SukiSU Ultra
       shell: bash
       working-directory: ${{ github.workspace }}/kernel
       run: |
         set -euo pipefail
 
-        KSU_REPO="https://github.com/KernelSU-Next/KernelSU-Next.git"
-        KSU_BRANCH="dev"
+        # Official SukiSU integration. The 'susfs-main' arg selects the SukiSU branch
+        # that carries SUSFS support; this is the SukiSU-side counterpart that the
+        # ShirkNeko/susfs4ksu kernel patches are co-designed against.
+        echo "Adding SukiSU Ultra (susfs-main)..."
+        curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-main
 
-        if [ "${{ inputs.use_latest_commits }}" = "true" ]; then
-          echo "Using latest KernelSU-Next from branch: $KSU_BRANCH"
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
-        else
-          COMMITS_JSON="${{ github.workspace }}/.github/config/commits.json"
-          KSU_SETUP_COMMIT=$(jq -er '.kernelsu.dev' "$COMMITS_JSON")
-          echo "Using pinned KernelSU commit: $KSU_SETUP_COMMIT"
-          curl -LSs "https://raw.githubusercontent.com/pershoot/KernelSU-Next/dev-susfs/kernel/setup.sh" | bash -s dev-susfs
-          git -C KernelSU-Next/kernel fetch --depth=50 origin "$KSU_SETUP_COMMIT"
-          git -C KernelSU-Next/kernel checkout "$KSU_SETUP_COMMIT"
+        # setup.sh creates KernelSU/ at the kernel root and symlinks drivers/kernelsu.
+        if [ ! -d KernelSU ]; then
+          echo "ERROR: SukiSU setup did not create KernelSU/"; ls -la; exit 1
         fi
+        echo "SukiSU tree:"; ls -la KernelSU
 
-        cd KernelSU-Next/kernel
-        
-        COMMITS_COUNT=$(/usr/bin/git rev-list --count HEAD)
-        BASE_VERSION=30000
-        KSU_VERSION=$(expr $COMMITS_COUNT "+" $BASE_VERSION)
-        sed -i "s/^KSU_VERSION_FALLBACK := 1$/KSU_VERSION_FALLBACK := ${KSU_VERSION}/" Kbuild
-
-        KSU_GIT_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.1")"
-        sed -i "s/^KSU_VERSION_TAG_FALLBACK := v0.0.1$/KSU_VERSION_TAG_FALLBACK := ${KSU_GIT_TAG}/" Kbuild
-    
     - name: Extract KSU Version Info
       id: ksu-version
       shell: bash
-      working-directory: ${{ github.workspace }}/kernel/KernelSU-Next
+      working-directory: ${{ github.workspace }}/kernel/KernelSU
       run: |
-        # Extract and export KSU version info
-        KSU_GIT_VERSION=$(git rev-list --count HEAD 2>/dev/null)
-        KSU_GIT_TAG=$(git describe --tags --abbrev=0 2>/dev/null)
-        KSU_COMMIT=$(git rev-parse --short HEAD 2>/dev/null)
-        KSU_VERSION=$((30000 + KSU_GIT_VERSION))
-        
+        # SukiSU computes its own version in Kbuild (40000 + commits - 2815).
+        # Export best-effort env for downstream release-notes steps.
+        KSU_GIT_VERSION=$(git rev-list --count HEAD 2>/dev/null || echo 0)
+        KSU_GIT_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "sukisu")
+        KSU_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+        KSU_VERSION=$((40000 + KSU_GIT_VERSION - 2815))
+
         echo "KSU_GIT_TAG=$KSU_GIT_TAG" >> $GITHUB_ENV
         echo "KSU_VERSION=$KSU_VERSION" >> $GITHUB_ENV
         echo "KSU_COMMIT=$KSU_COMMIT" >> $GITHUB_ENV
-
-    - name: 'Fix KernelSU-Next'
-      shell: bash
-      working-directory: ${{ github.workspace }}/kernel/KernelSU-Next
-      run: |
-        set -euo pipefail
-        cp ${{ github.action_path }}/patches/static.patch "${{ github.workspace }}/kernel/KernelSU-Next/static.patch"
-        patch -p1 < static.patch
 
     - name: Enable Kernel Configs
       uses: ./.github/actions/set-kernel-config
       with:
         config_list: |
           CONFIG_KSU=y
+          CONFIG_KPROBES=y

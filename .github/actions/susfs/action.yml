@@ -30,7 +30,9 @@ runs:
         set -euo pipefail
 
         SUSFS_BRANCH="gki-${{ inputs.version }}"
-        SUSFS_REPO="https://gitlab.com/simonpunk/susfs4ksu.git"        
+        # SukiSU Ultra is co-designed against ShirkNeko's susfs4ksu fork (not simonpunk's,
+        # which targets KernelSU-Next hook names). Same gki-<ver> branch, SUSFS v2.1.0.
+        SUSFS_REPO="https://github.com/ShirkNeko/susfs4ksu.git"
 
         echo "Preparing SUSFS for branch: $SUSFS_BRANCH"
         echo "Cloning latest from $SUSFS_BRANCH..."
@@ -57,7 +59,6 @@ runs:
           CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
           CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
           CONFIG_KSU_SUSFS_SUS_MAP=y
-          CONFIG_KSU_DISABLE_POLICY=y
 
     - name: Apply Kernel SUSFS Patches
       shell: bash
