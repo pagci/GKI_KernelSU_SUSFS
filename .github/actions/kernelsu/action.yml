@@ -49,4 +49,3 @@ runs:
       with:
         config_list: |
           CONFIG_KSU=y
-          CONFIG_KSU_MANUAL_HOOK=y
