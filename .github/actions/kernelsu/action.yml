@@ -73,6 +73,23 @@ runs:
           echo "ERROR: my manager key not inserted exactly once"; exit 1
         fi
 
+        # --- gate the supercall fd-install to manager/root (defeat Duck run_ksu_supercall_probe) ---
+        # A stock kernel returns EINVAL for this magic syscall. Without a gate, ANY caller
+        # (incl. Duck's non-manager probe, which knows the open-source magics) reaches
+        # ksu_supercall_reboot_handler -> task_work installs an fd into the caller = non-stock
+        # behavior that crashes/fingerprints the probe (tombstone in run_ksu_supercall_probe).
+        # Gate it so only manager/root proceed; everyone else gets stock -EINVAL.
+        DISP=kernel/supercall/dispatch.c
+        if [ -f "$DISP" ] && grep -q '    if (magic2 == KSU_INSTALL_MAGIC2)' "$DISP"; then
+          sed -i 's|    if (magic2 == KSU_INSTALL_MAGIC2)|    if (!manager_or_root())\n        return -EINVAL;\n    if (magic2 == KSU_INSTALL_MAGIC2)|' "$DISP"
+          if [ "$(grep -c '!manager_or_root' "$DISP")" != "1" ]; then
+            echo "ERROR: supercall gate not applied exactly once"; exit 1
+          fi
+          echo "supercall fd-install gated to manager_or_root"
+        else
+          echo "ERROR: dispatch.c KSU_INSTALL_MAGIC2 routing not found (SukiSU layout changed)"; exit 1
+        fi
+
     - name: Extract KSU Version Info
       id: ksu-version
       shell: bash
