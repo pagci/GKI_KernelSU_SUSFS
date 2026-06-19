@@ -35,7 +35,7 @@ runs:
         git -C KernelSU fetch --unshallow 2>/dev/null || git -C KernelSU fetch --depth=2147483647 2>/dev/null || true
         echo "KernelSU commit count: $(git -C KernelSU rev-list --count HEAD 2>/dev/null)"
 
-    - name: Rename KSU SELinux domain (stealth)
+    - name: KSU stealth patches (selinux domain rename + trust my hidden-manager key)
       shell: bash
       working-directory: ${{ github.workspace }}/kernel/KernelSU
       run: |
@@ -56,6 +56,21 @@ runs:
         # hard assert: the literal 'ksu' type must be gone from the defines
         if grep -qE '#define KERNEL_SU_(DOMAIN|FILE) "ksu' "$SEL"; then
           echo "ERROR: ksu SELinux rename did not apply"; exit 1
+        fi
+
+        # --- trust MY signing key so a renamed/resigned SukiSU manager is accepted ---
+        # The kernel trusts a manager by the X.509 cert (size + sha256) in its v2 sig
+        # block, NOT by package name (CVE-2023-49794 fix). apk_sign_keys[] is the trust
+        # table. ADDITIVE: append my self-signed cert (computed + validated locally:
+        # my parser reproduces the SukiSU row 0x35c/947ae9 exactly), keep upstream rows
+        # (the official SukiSU manager stays as a no-rebuild recovery path).
+        MY_SIZE="${MY_MANAGER_SIZE:-0x349}"
+        MY_SHA="${MY_MANAGER_SHA:-56b24e1377a4523f52230f0480391bc4df2ea89b6d58b75f5597827f657aa876}"
+        APKSIGN=kernel/manager/apk_sign.c
+        sed -i "/apk_sign_keys\[\] = {/a\\    { ${MY_SIZE}, \"${MY_SHA}\" }, // self (trusted hidden manager)" "$APKSIGN"
+        echo "apk_sign_keys[] now:"; grep -E '\{ 0x|\{ 384|// self' "$APKSIGN"
+        if [ "$(grep -c "$MY_SHA" "$APKSIGN")" != "1" ]; then
+          echo "ERROR: my manager key not inserted exactly once"; exit 1
         fi
 
     - name: Extract KSU Version Info
