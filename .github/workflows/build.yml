@@ -171,7 +171,7 @@ jobs:
         B=common/fs/proc/bootconfig.c
         [ -f "$B" ] || { echo "ERROR: $B not found"; ls -la common/fs/proc/ || true; exit 1; }
         echo "--- before ---"; grep -n 'boot_config_proc_show\|saved_boot_config' "$B" || true
-        python3 .github/scripts/spoof_bootconfig_safe.py "$B"
+        python3 "$GITHUB_WORKSPACE/.github/scripts/spoof_bootconfig_safe.py" "$B"
         echo "--- after ---"; grep -n 'verifiedbootstate' "$B" || { echo "ERROR: patch did not apply"; exit 1; }
         if [ "$(grep -c 'androidboot.verifiedbootstate = ..green' "$B")" -lt 1 ]; then echo "ERROR: green not found"; exit 1; fi
 
