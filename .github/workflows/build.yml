@@ -111,7 +111,7 @@ jobs:
         #   device: ro.build.version.security_patch=2026-04-05, ro.build.date=2026-03-10
         # Target sits just BEFORE the system image build (never reads "more recent
         # than system image") and ~1 month before the patch level (normal cadence).
-        FIXED_BUILD_DATE="2026-03-05 04:20:00 UTC"
+        FIXED_BUILD_DATE="2026-03-05 11:34:52 UTC"
         SOURCE_DATE_EPOCH=$(date -u -d "$FIXED_BUILD_DATE" +%s)
         echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH" >> $GITHUB_ENV
         KBUILD_TS=$(date -u -d @${SOURCE_DATE_EPOCH} '+%a %b %d %H:%M:%S UTC %Y')
@@ -146,6 +146,22 @@ jobs:
       uses: ./.github/actions/kernelsu
       with:
         use_latest_commits: ${{ inputs.use_latest_commits }}
+
+    - name: Spoof /proc/version compiler string (stock clang r574158)
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel
+      run: |
+        set -euo pipefail
+        V=common/fs/proc/version.c
+        [ -f "$V" ] || { echo "ERROR: $V not found"; ls -la common/fs/proc/ || true; exit 1; }
+        echo "--- before ---"; grep -n 'linux_proc_banner' "$V" || true
+        # Replace the seq_printf banner identifier with a hardcoded stock banner.
+        # Keeps the 3 %s args (sysname, release, version); only the (compile_by@host)
+        # and (compiler) literals are baked in to match stock Android 16 panther.
+        sed -i 's|seq_printf(m, linux_proc_banner,|seq_printf(m, "%s version %s (build-user@build-host) (Android (14475230, +pgo, +bolt, +lto, +mlgo, based on r574158) clang version 21.0.0 (https://android.googlesource.com/toolchain/llvm-project 9f872551d3c681d06fd303b36f16ed5c274735eb), LLD 21.0.0) %s\\n",|' "$V"
+        echo "--- after ---"; grep -n 'clang version 21.0.0' "$V" || { echo "ERROR: patch did not apply"; exit 1; }
+        # assert exactly one occurrence and that linux_proc_banner is no longer called in version_proc_show
+        if [ "$(grep -c 'clang version 21.0.0' "$V")" != "1" ]; then echo "ERROR: unexpected match count"; exit 1; fi
 
     - name: SUSFS
       if: contains(inputs.feature_set, 'SUSFS') || inputs.feature_set == 'FULL'
