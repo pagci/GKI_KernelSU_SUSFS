@@ -101,6 +101,17 @@ jobs:
           OS_PATCH_LEVEL_YM="$OS_PATCH_LEVEL_INPUT"
         fi
         FIXED_BUILD_DATE="${OS_PATCH_LEVEL_YM}-05 04:20:00 UTC"
+        # --- STEALTH OVERRIDE (panther) -------------------------------------------
+        # The manifest os_patch_level (config date=2025-09) drives the GKI source
+        # snapshot (known-good 6.1.145 that boots). But /proc/version's timestamp is
+        # read by juanma/kknd: "kernel build date unusually far from all security
+        # patch dates" fires when the kernel date is months off the device patch.
+        # Decouple the SOURCE date from the DISPLAYED build date: pin the timestamp
+        # to look stock for THIS device without changing the (proven) source.
+        #   device: ro.build.version.security_patch=2026-04-05, ro.build.date=2026-03-10
+        # Target sits just BEFORE the system image build (never reads "more recent
+        # than system image") and ~1 month before the patch level (normal cadence).
+        FIXED_BUILD_DATE="2026-03-05 04:20:00 UTC"
         SOURCE_DATE_EPOCH=$(date -u -d "$FIXED_BUILD_DATE" +%s)
         echo "SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH" >> $GITHUB_ENV
         KBUILD_TS=$(date -u -d @${SOURCE_DATE_EPOCH} '+%a %b %d %H:%M:%S UTC %Y')
