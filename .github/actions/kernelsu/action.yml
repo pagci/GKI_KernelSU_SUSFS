@@ -35,6 +35,29 @@ runs:
         git -C KernelSU fetch --unshallow 2>/dev/null || git -C KernelSU fetch --depth=2147483647 2>/dev/null || true
         echo "KernelSU commit count: $(git -C KernelSU rev-list --count HEAD 2>/dev/null)"
 
+    - name: Rename KSU SELinux domain (stealth)
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel/KernelSU
+      run: |
+        set -euo pipefail
+        # Defeats juanma/kknd 'process:setcurrent' probe: it writes "u:r:ksu:s0" to
+        # /proc/self/attr/current and a non-EINVAL result proves the 'ksu' type exists.
+        # The type/domain name is a single #define in kernel/selinux/selinux.h; every
+        # context string, sepolicy rule, transition and init.rc line derives from it,
+        # so renaming the 2 defines renames everything coherently and root still works
+        # (the renamed domain keeps all its allow rules). A probe for literal "ksu"
+        # then hits security_context_to_sid failure -> EINVAL -> undetected.
+        NEW_KSU_DOMAIN="${NEW_KSU_DOMAIN:-hmi_se}"
+        NEW_KSU_FILE="${NEW_KSU_FILE:-${NEW_KSU_DOMAIN}_file}"
+        SEL=kernel/selinux/selinux.h
+        sed -i "s/#define KERNEL_SU_DOMAIN \"ksu\"/#define KERNEL_SU_DOMAIN \"${NEW_KSU_DOMAIN}\"/" "$SEL"
+        sed -i "s/#define KERNEL_SU_FILE \"ksu_file\"/#define KERNEL_SU_FILE \"${NEW_KSU_FILE}\"/" "$SEL"
+        echo "Renamed selinux defines:"; grep -E '#define KERNEL_SU_(DOMAIN|FILE)' "$SEL"
+        # hard assert: the literal 'ksu' type must be gone from the defines
+        if grep -qE '#define KERNEL_SU_(DOMAIN|FILE) "ksu' "$SEL"; then
+          echo "ERROR: ksu SELinux rename did not apply"; exit 1
+        fi
+
     - name: Extract KSU Version Info
       id: ksu-version
       shell: bash
