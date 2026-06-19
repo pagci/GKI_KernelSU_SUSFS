@@ -28,6 +28,13 @@ runs:
         fi
         echo "SukiSU tree:"; ls -la KernelSU
 
+        # CRITICAL: setup.sh clones SukiSU shallow -> Kbuild's `git rev-list --count`
+        # returns a low number -> wrong KSU_VERSION (e.g. 37971) -> manager (40796)
+        # rejects it as incompatible ("Not installed"). Deepen to the full history so
+        # KSU_VERSION = 40000 + real_commit_count - 2815 lands in the expected 40xxx range.
+        git -C KernelSU fetch --unshallow 2>/dev/null || git -C KernelSU fetch --depth=2147483647 2>/dev/null || true
+        echo "KernelSU commit count: $(git -C KernelSU rev-list --count HEAD 2>/dev/null)"
+
     - name: Extract KSU Version Info
       id: ksu-version
       shell: bash
@@ -49,3 +56,4 @@ runs:
       with:
         config_list: |
           CONFIG_KSU=y
+          CONFIG_KSU_MANUAL_HOOK=y
