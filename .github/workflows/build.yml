@@ -192,6 +192,27 @@ jobs:
         version: ${{ inputs.version }}
         kernel_version: ${{ inputs.kernel_version }}
 
+    - name: Spoof verified-boot state in /proc/bootconfig (kernel-level, no resetprop)
+      working-directory: ${{ github.workspace }}/kernel
+      shell: bash
+      run: |
+        set -euo pipefail
+        # init (2nd stage) imports /proc/bootconfig to set ro.boot.* -> if this
+        # reads green, the lock props are written NATIVELY (zero resetprop), which
+        # kills kknd "Modified Property (resetprop)" + Duck "raw property-area residue".
+        BC=""
+        for c in common/fs/proc/bootconfig.c fs/proc/bootconfig.c; do
+          [ -f "$c" ] && BC="$c" && break
+        done
+        if [ -z "$BC" ]; then
+          BC="$(find . -path '*proc/bootconfig.c' 2>/dev/null | head -1)"
+        fi
+        [ -n "$BC" ] || { echo "ERROR: bootconfig.c not found"; exit 1; }
+        echo "Patching $BC"
+        python3 "${{ github.workspace }}/.github/scripts/spoof_bootconfig.py" "$BC"
+        grep -q 'verifiedbooterror' "$BC" || { echo "ASSERT FAIL: spoof not present"; exit 1; }
+        echo "ASSERT OK: verified-boot spoof present in $BC"
+
     - name: Apply ABI Compare Bypass
       if: false
       working-directory: ${{ github.workspace }}/kernel
