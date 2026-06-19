@@ -163,6 +163,18 @@ jobs:
         # assert exactly one occurrence and that linux_proc_banner is no longer called in version_proc_show
         if [ "$(grep -c 'clang version 21.0.0' "$V")" != "1" ]; then echo "ERROR: unexpected match count"; exit 1; fi
 
+    - name: Spoof /proc/bootconfig verified-boot state (native green, no resetprop)
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel
+      run: |
+        set -euo pipefail
+        B=common/fs/proc/bootconfig.c
+        [ -f "$B" ] || { echo "ERROR: $B not found"; ls -la common/fs/proc/ || true; exit 1; }
+        echo "--- before ---"; grep -n 'boot_config_proc_show\|saved_boot_config' "$B" || true
+        python3 .github/scripts/spoof_bootconfig_safe.py "$B"
+        echo "--- after ---"; grep -n 'verifiedbootstate' "$B" || { echo "ERROR: patch did not apply"; exit 1; }
+        if [ "$(grep -c 'androidboot.verifiedbootstate = ..green' "$B")" -lt 1 ]; then echo "ERROR: green not found"; exit 1; fi
+
     - name: SUSFS
       if: contains(inputs.feature_set, 'SUSFS') || inputs.feature_set == 'FULL'
       uses: ./.github/actions/susfs
