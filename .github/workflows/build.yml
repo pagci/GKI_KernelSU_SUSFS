@@ -163,17 +163,13 @@ jobs:
         # assert exactly one occurrence and that linux_proc_banner is no longer called in version_proc_show
         if [ "$(grep -c 'clang version 21.0.0' "$V")" != "1" ]; then echo "ERROR: unexpected match count"; exit 1; fi
 
-    - name: Spoof /proc/bootconfig verified-boot state (native green, no resetprop)
-      shell: bash
-      working-directory: ${{ github.workspace }}/kernel
-      run: |
-        set -euo pipefail
-        B=common/fs/proc/bootconfig.c
-        [ -f "$B" ] || { echo "ERROR: $B not found"; ls -la common/fs/proc/ || true; exit 1; }
-        echo "--- before ---"; grep -n 'boot_config_proc_show\|saved_boot_config' "$B" || true
-        python3 "$GITHUB_WORKSPACE/.github/scripts/spoof_bootconfig_safe.py" "$B"
-        echo "--- after ---"; grep -n 'verifiedbootstate' "$B" || { echo "ERROR: patch did not apply"; exit 1; }
-        if [ "$(grep -c 'androidboot.verifiedbootstate = ..green' "$B")" -lt 1 ]; then echo "ERROR: green not found"; exit 1; fi
+    # ===================================================================
+    # REMOVED: /proc/bootconfig kernel spoof (patch to boot_config_proc_show).
+    # It BOOTLOOPS reliably (tried twice, incl. a minimal strstr-only version):
+    # init reads /proc/bootconfig too early and any change to the show function
+    # breaks boot. DO NOT RE-ADD. Verified-boot/lock state is spoofed in USERSPACE
+    # (susfs_manager resetprop + the trusted_hidedev_adb module), never the kernel.
+    # ===================================================================
 
     - name: SUSFS
       if: contains(inputs.feature_set, 'SUSFS') || inputs.feature_set == 'FULL'
