@@ -1,64 +1,69 @@
 #!/usr/bin/env python3
-# Anchor-based patcher: make a running adbd invisible to APP processes that probe
-# its control sockets (the way Caixa Tem / Topaz detect adb: connect to
-# "@jdwp-control" -> success, and "/dev/socket/adbd"). For app uids (>= 10000),
-# connect() to those sockets returns the same as a device with adb OFF
-# (@jdwp-control -> ECONNREFUSED, /dev/socket/adbd -> ENOENT). Root/system/adbd
-# keep full access, so `adb shell`/push still work.
+# Anti-detection: hide adbd's control sockets from app (uid>=10000) processes.
+#
+# Caixa Tem (Topaz/dfndr in libmcrypt.so) detects a running adbd by probing the
+# UNIX sockets adbd creates, regardless of TCP port / firewall / spoofed props:
+#   * "@jdwp-control" (abstract, SOCK_STREAM)  -> connect() succeeds when adbd runs
+#   * "/dev/socket/adbd" (pathname, SOCK_DGRAM probe) -> EACCES (=exists) when adbd runs
+# Both are resolved by unix_find_other(), the common helper used by
+# unix_stream_connect(), unix_dgram_connect() and unix_dgram_sendmsg().
+# Hooking it in ONE place makes both sockets look exactly like an adb-OFF device
+# for app uids (@jdwp-control -> ECONNREFUSED, /dev/socket/adbd -> ENOENT), while
+# root/system/adbd are untouched (adb shell/push and on-device adb keep working).
 import re, sys
 
-path = sys.argv[1]
-src = open(path).read()
+PATH = sys.argv[1]
+src = open(PATH).read()
 
-if "trusted_hide_adbd_socket" in src:
+if "trusted_hide_adbd_find" in src:
     print("already patched"); sys.exit(0)
 
-FUNC = r"""
-#ifndef AID_APP_START
+FUNC = '''#ifndef AID_APP_START
 #define AID_APP_START 10000
 #endif
-/* trusted_hidedev: hide a running adbd from app processes (anti-detection). */
-static int trusted_hide_adbd_socket(struct sockaddr_un *sunaddr, int addr_len)
+/* anti-detection: make adbd's control sockets look absent to app processes */
+static struct sock *trusted_hide_adbd_find(struct sockaddr_un *sunaddr, int addr_len)
 {
-	int nlen;
-
-	if (likely(from_kuid(&init_user_ns, current_uid()) < AID_APP_START))
-		return 0;
-	if (addr_len <= (int)offsetof(struct sockaddr_un, sun_path))
-		return 0;
-
-	if (sunaddr->sun_path[0] == '\0') {
-		nlen = addr_len - (int)offsetof(struct sockaddr_un, sun_path) - 1;
-		if (nlen >= 12 &&
-		    memcmp(sunaddr->sun_path + 1, "jdwp-control", 12) == 0)
-			return -ECONNREFUSED;	/* == adbd not listening */
-	} else if (strcmp(sunaddr->sun_path, "/dev/socket/adbd") == 0) {
-		return -ENOENT;			/* == socket file absent */
-	}
-	return 0;
+\tint nlen;
+\tif (likely(from_kuid(&init_user_ns, current_uid()) < AID_APP_START))
+\t\treturn NULL;
+\tif (addr_len <= (int)offsetof(struct sockaddr_un, sun_path))
+\t\treturn NULL;
+\tif (sunaddr->sun_path[0] == '\\0') {
+\t\tnlen = addr_len - (int)offsetof(struct sockaddr_un, sun_path) - 1;
+\t\tif (nlen >= 12 && memcmp(sunaddr->sun_path + 1, "jdwp-control", 12) == 0)
+\t\t\treturn ERR_PTR(-ECONNREFUSED);
+\t} else if (strcmp(sunaddr->sun_path, "/dev/socket/adbd") == 0) {
+\t\treturn ERR_PTR(-ENOENT);
+\t}
+\treturn NULL;
 }
-"""
 
-# 1) insert the helper right before unix_stream_connect()
-m = re.search(r"\nstatic int unix_stream_connect\(struct socket \*sock,", src)
-if not m:
-    sys.exit("ERROR: unix_stream_connect definition not found")
-src = src[:m.start()] + "\n" + FUNC + src[m.start():]
+'''
 
-# 2) insert the call right after the first unix_validate_addr()/goto out inside it
-m2 = re.search(r"\nstatic int unix_stream_connect\(struct socket \*sock,", src)
-anchor = re.compile(
-    r"(err = unix_validate_addr\(sunaddr, addr_len\);\s*\n\s*if \(err\)\s*\n\s*goto out;\n)")
-am = anchor.search(src, m2.start())
-if not am:
-    sys.exit("ERROR: unix_validate_addr anchor not found in unix_stream_connect")
-call = ("\n\terr = trusted_hide_adbd_socket(sunaddr, addr_len);\n"
-        "\tif (err)\n\t\tgoto out;\n")
-src = src[:am.end()] + call + src[am.end():]
+CALL = ('\tsk = trusted_hide_adbd_find(sunaddr, addr_len);\n'
+        '\tif (sk)\n'
+        '\t\treturn sk;\n\n')
 
-open(path, "w").write(src)
+# 1) insert FUNC right before the unix_find_other definition
+m_def = re.search(r'\nstatic struct sock \*unix_find_other\(struct net \*net,', src)
+if not m_def:
+    print("ERROR: unix_find_other definition not found"); sys.exit(1)
+ins = m_def.start() + 1  # after the leading newline
+src = src[:ins] + FUNC + src[ins:]
 
-n = src.count("trusted_hide_adbd_socket")
+# 2) insert CALL inside unix_find_other body, before the first `if (sunaddr->sun_path[0])`
+m_def2 = re.search(r'\nstatic struct sock \*unix_find_other\(struct net \*net,', src)
+body = src.find('{', m_def2.end())
+m_anchor = re.search(r'\n\tif \(sunaddr->sun_path\[0\]\)', src[body:])
+if not m_anchor:
+    print("ERROR: unix_find_other body anchor not found"); sys.exit(1)
+pos = body + m_anchor.start() + 1  # keep the leading newline before our block
+src = src[:pos] + CALL + src[pos:]
+
+open(PATH, "w").write(src)
+
+n = src.count("trusted_hide_adbd_find")
 if n != 2:
-    sys.exit("ERROR: expected 2 references (def+call), got %d" % n)
-print("patched OK (%s)" % path)
+    print("ERROR: expected 2 references (def+call), got %d" % n); sys.exit(1)
+print("patched OK (%s)" % PATH)

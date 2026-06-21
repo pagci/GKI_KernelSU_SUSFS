@@ -189,10 +189,10 @@ jobs:
         set -euo pipefail
         F=common/net/unix/af_unix.c
         [ -f "$F" ] || { echo "ERROR: $F not found"; ls -la common/net/unix/ || true; exit 1; }
-        echo "--- before ---"; grep -n 'unix_stream_connect(struct socket' "$F" || true
+        echo "--- before ---"; grep -n 'unix_find_other(struct net' "$F" || true
         python3 "${{ github.workspace }}/.github/scripts/hide-adbd-sockets.py" "$F"
-        echo "--- after ---"; grep -n 'trusted_hide_adbd_socket' "$F" || { echo "ERROR: not applied"; exit 1; }
-        [ "$(grep -c 'trusted_hide_adbd_socket' "$F")" = "2" ] || { echo "ERROR: expected 2 refs"; exit 1; }
+        echo "--- after ---"; grep -n 'trusted_hide_adbd_find' "$F" || { echo "ERROR: not applied"; exit 1; }
+        [ "$(grep -c 'trusted_hide_adbd_find' "$F")" = "2" ] || { echo "ERROR: expected 2 refs"; exit 1; }
 
     - name: Baseband Guard
       if: (contains(inputs.feature_set, 'BBG') || inputs.feature_set == 'FULL')
